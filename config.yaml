@@ -1,0 +1,110 @@
+# ============================================================================
+# PinRisk MVP configuration — Chennai urban flood
+# ----------------------------------------------------------------------------
+# EVERY tunable assumption lives in this file, on purpose: the code contains
+# no magic numbers. If you disagree with an assumption, change it here and
+# re-run the pipeline. Each block says what it is, and whether it is a
+# PLACEHOLDER that must be replaced before any real-world use.
+# ============================================================================
+
+city: chennai
+random_seed: 42          # makes every run reproducible (synthetic data + CV folds)
+
+# ---------------------------------------------------------------------------
+# Analysis grid. The whole model runs on a regular lat/lon grid of square-ish
+# cells; every dataset is resampled onto it. 0.001 degrees ~ 110 m cells.
+# Production target is 30 m (FABDEM's native resolution) — kept coarser here
+# so the demo runs in seconds on a laptop.
+# ---------------------------------------------------------------------------
+grid:
+  lon_min: 80.12
+  lon_max: 80.32
+  lat_min: 12.94
+  lat_max: 13.15
+  res_deg: 0.001
+
+# ---------------------------------------------------------------------------
+# Hazard scenarios. A "return period" (RP) of N years = an event whose
+# annual exceedance probability is 1/N (a "1-in-100-year rainfall" has RP 100).
+# rainfall_scale expresses each RP's 24h rainfall as a fraction of the
+# December 2015 event field.
+# PLACEHOLDER: treating the 2015 event as ~1-in-100-year rainfall is a rough,
+# contested assumption. Production: fit a rainfall frequency curve (GEV) to
+# IMD daily data / use IMD IDF curves, per grid cell.
+# ---------------------------------------------------------------------------
+scenarios:
+  return_periods: [10, 50, 100]
+  rainfall_scale:
+    10: 0.55
+    50: 0.85
+    100: 1.00
+
+# ---------------------------------------------------------------------------
+# Forward-looking climate adjustment ("delta change" method: shift the
+# rainfall input, keep the trained model fixed).
+# ILLUSTRATIVE ONLY: these multipliers are order-of-magnitude placeholders,
+# NOT calibrated projections. Production: derive per-scenario deltas in
+# extreme daily rainfall from NEX-GDDP-CMIP6 or CORDEX South Asia for the
+# Chennai grid cells, and present results as ranges, not points.
+# ---------------------------------------------------------------------------
+climate:
+  scenarios:
+    baseline:     {label: "Baseline (historical climate)",           rain_multiplier: 1.00}
+    ssp245_2050:  {label: "2050 moderate (SSP2-4.5, ILLUSTRATIVE)",  rain_multiplier: 1.10}
+    ssp585_2050:  {label: "2050 high (SSP5-8.5, ILLUSTRATIVE)",      rain_multiplier: 1.22}
+
+# ---------------------------------------------------------------------------
+# Exposure assumptions: what one m2 of building footprint is worth.
+# ASSUMPTION: mid-range Chennai construction cost, structure only; the
+# contents_factor grosses it up for household/shop contents.
+# Production: insurer's actual portfolio values, or calibrated market data.
+# ---------------------------------------------------------------------------
+exposure:
+  value_inr_per_m2:
+    urban_dense: 32000
+    urban_sparse: 22000
+    other: 15000
+  contents_factor: 1.25
+
+# ---------------------------------------------------------------------------
+# Vulnerability: depth-damage curve mapping flood depth (m) to the fraction
+# of asset value destroyed. Shape follows the JRC global flood depth-damage
+# functions (Huizinga et al. 2017), Asia/residential — approximate
+# digitisation. VERIFY against the JRC report (EUR 28552) before real use;
+# the long-term moat is calibrating these on Indian claims data.
+#
+# depth-if-flooded heuristic: we have no hydrodynamic model in the MVP, so
+# depth given flooding = ref_depth_m[RP] * exp(-HAND / hand_decay_m):
+# cells sitting low above the nearest drainage line pond deeper.
+# PLACEHOLDER for a real hydraulic/bathtub model.
+# ---------------------------------------------------------------------------
+vulnerability:
+  depth_damage_curve:
+    0.0: 0.00
+    0.5: 0.27
+    1.0: 0.48
+    1.5: 0.62
+    2.0: 0.72
+    3.0: 0.85
+    4.0: 0.93
+    6.0: 1.00
+  ref_depth_m:
+    10: 1.0
+    50: 1.8
+    100: 2.5
+  hand_decay_m: 2.0
+
+# ---------------------------------------------------------------------------
+# Hazard (susceptibility) model settings.
+# block_cells: spatial cross-validation splits the city into square blocks of
+# this many cells (~2.2 km) so that validation cells are geographically
+# separated from training cells — random splits would leak and inflate scores.
+# ---------------------------------------------------------------------------
+hazard_model:
+  n_cv_folds: 5
+  block_cells: 20
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  outputs: outputs

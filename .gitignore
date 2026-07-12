@@ -1,0 +1,15 @@
+# Python virtual environment (690 MB — never commit; recreate with requirements.txt)
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated pipeline artifacts — regenerate with `python run_pipeline.py all`
+data/
+outputs/
+
+# OS / editor cruft
+.DS_Store
+.idea/
+.vscode/
+*.swp

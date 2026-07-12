@@ -1,0 +1,21 @@
+# PinRisk MVP — Python >= 3.11
+# Core pipeline
+numpy
+pandas
+scipy
+scikit-learn
+pyyaml
+# Geospatial
+geopandas
+shapely
+pyproj
+# Dashboard & plots
+streamlit
+folium
+matplotlib
+
+# ---- Optional (only needed when swapping in REAL datasets) ----
+# rasterio          # read/resample real GeoTIFFs (DEM, rainfall, flood extent)
+# earthengine-api   # pull Sentinel-1 / WorldCover / IMERG via Google Earth Engine
+# pysheds           # proper flow-path HAND from the DEM (replaces HAND-lite)
+# xgboost           # alternative GBM; sklearn HistGradientBoosting is the default

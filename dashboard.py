@@ -12,6 +12,8 @@ which switches between columns the pipeline precomputed per scenario.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import folium
@@ -26,6 +28,31 @@ st.set_page_config(page_title="PinRisk — Chennai Flood Risk", layout="wide")
 
 CFG = load_config()
 OUT = Path(CFG["paths"]["outputs"])
+
+REQUIRED_OUTPUTS = [
+    OUT / "pincode_risk.geojson",
+    OUT / "validation" / "metrics.json",
+    OUT / "validation" / "pincode_validation.csv",
+    Path(CFG["paths"]["raw"]) / "provenance.json",
+]
+
+
+def ensure_pipeline_outputs() -> None:
+    """Run the pipeline once, on first load, if any required output is missing."""
+    if all(p.exists() for p in REQUIRED_OUTPUTS):
+        return
+    with st.spinner(
+        "No pipeline outputs found — running `python run_pipeline.py all` "
+        "(first run only, this can take a couple of minutes)..."
+    ):
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).parent / "run_pipeline.py"), "all"],
+            capture_output=True, text=True,
+        )
+    if result.returncode != 0:
+        st.error("Pipeline run failed — see the log below.")
+        st.code((result.stdout or "") + "\n" + (result.stderr or ""))
+        st.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -52,9 +79,7 @@ def inr(x: float) -> str:
     return f"Rs {x:,.0f}"
 
 
-if not (OUT / "pincode_risk.geojson").exists():
-    st.error("No pipeline outputs found. Run `python run_pipeline.py all` first.")
-    st.stop()
+ensure_pipeline_outputs()
 
 pin, provenance, metrics, pincode_val = load_outputs()
 any_synth = any(v["is_synthetic"] for v in provenance.values())

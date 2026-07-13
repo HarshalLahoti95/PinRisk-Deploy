@@ -11,6 +11,7 @@ which switches between columns the pipeline precomputed per scenario.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import subprocess
 import sys
@@ -37,22 +38,59 @@ REQUIRED_OUTPUTS = [
 ]
 
 
+LOCK_PATH = Path(__file__).parent / ".pipeline.lock"
+
+
 def ensure_pipeline_outputs() -> None:
-    """Run the pipeline once, on first load, if any required output is missing."""
+    """Run the pipeline once, on first load, if any required output is missing.
+
+    Guarded by a file lock: on shared/hosted deploys, a page reload while the
+    first run is still in progress would otherwise start a second concurrent
+    `run_pipeline.py all`, doubling CPU/RAM pressure. Late arrivals just wait
+    for the in-flight run and reuse its outputs instead of starting their own.
+    """
     if all(p.exists() for p in REQUIRED_OUTPUTS):
         return
-    with st.spinner(
-        "No pipeline outputs found — running `python run_pipeline.py all` "
-        "(first run only, this can take a couple of minutes)..."
-    ):
-        result = subprocess.run(
-            [sys.executable, str(Path(__file__).parent / "run_pipeline.py"), "all"],
-            capture_output=True, text=True,
-        )
-    if result.returncode != 0:
-        st.error("Pipeline run failed — see the log below.")
-        st.code((result.stdout or "") + "\n" + (result.stderr or ""))
-        st.stop()
+
+    lock_file = open(LOCK_PATH, "a")
+    try:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            with st.spinner(
+                "Another session is already generating pipeline outputs — "
+                "waiting for it to finish..."
+            ):
+                fcntl.flock(lock_file, fcntl.LOCK_EX)  # blocks until released
+
+        if all(p.exists() for p in REQUIRED_OUTPUTS):
+            return  # the run we waited on already produced everything we need
+
+        with st.spinner(
+            "No pipeline outputs found — running `python run_pipeline.py all` "
+            "(first run only, this can take a few minutes)..."
+        ):
+            log_box = st.empty()
+            lines: list[str] = []
+            proc = subprocess.Popen(
+                [sys.executable, str(Path(__file__).parent / "run_pipeline.py"), "all"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, bufsize=1,
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                print(line)  # also surface progress in the platform's own logs
+                lines.append(line)
+                log_box.code("\n".join(lines[-20:]))
+            returncode = proc.wait()
+
+        if returncode != 0:
+            st.error("Pipeline run failed — see the log below.")
+            st.code("\n".join(lines))
+            st.stop()
+    finally:
+        fcntl.flock(lock_file, fcntl.LOCK_UN)
+        lock_file.close()
 
 
 # ---------------------------------------------------------------------------
